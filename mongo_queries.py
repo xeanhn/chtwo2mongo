@@ -943,6 +943,8 @@ def query_11():
 
     match_stage = { "$match": {"nation.n_name": "Germany"}}
 
+    project_less = {"$project" : {"s_i_id" : 1, "s_order_cnt" : 1}}
+
     group_stage = {"$group": {"_id": None,
                             "sum_s_order_cnt": {"$sum": "$s_order_cnt"},
                             "previous_data": {"$push": "$$ROOT"},
@@ -975,7 +977,7 @@ def query_11():
                         }
                     }
 
-    pipeline = [add_stage, lookup_supplier, unwind_supplier, lookup_nation, unwind_nation, match_stage, group_stage, unwind_previous_data, add_stage_2, group_stage2, match_stage2, sort_stage, project_stage]
+    pipeline = [add_stage, lookup_supplier, unwind_supplier, lookup_nation, unwind_nation, match_stage, project_less, group_stage, unwind_previous_data, add_stage_2, group_stage2, match_stage2, sort_stage, project_stage]
     start_time = time.time()
     cur = db.stock.aggregate(pipeline, allowDiskUse = True)
     # print(dumps(cur, indent=2))
@@ -1767,12 +1769,12 @@ def query_21():
     
 def query_22():
     match_stage1 = {"$match": {"$expr": {
-        "$and": [
-            {"$regexMatch": {
-                "input": "$c_phone",
-                "regex": "^[1-7].*$"}}, 
-            {"$gt": ["$c_balance", 0]}
-            ]
+    "$and": [
+        {"$regexMatch": {
+            "input": "$c_phone",
+            "regex": "^[1-7].*$"}}, 
+        {"$gt": ["$c_balance", 0]}
+        ]
     }}}
 
     lookup_orders = {"$lookup" : {"from": "orders", 
@@ -1799,22 +1801,25 @@ def query_22():
 
     match_stage2 = {"$match" : {"orders_size" : 0}}
 
+
     group_stage1 = {"$group": {
-        "_id": None,
-        "data": {"$push": {"data":"$$ROOT"}},
-        "average": {"$avg":"$c_balance"}
+        "_id": "c_id",
+        "average": {"$avg" : "$c_balance"}
     }}
 
-    unwind_data = {"$unwind": "$data"}
+    pipeline = [match_stage1, lookup_orders, add_stage1, match_stage2, group_stage1]
+    output = list(db.customer.aggregate(pipeline))[0]
+    average = output["average"]
 
-    match_stage3 = {"$match" : {"$expr": {"$gt": ["$data.data.c_balance", "$average"]}}}
 
-    add_stage2 = {"$addFields": {"country": {"$substr" : ["$data.data.c_state", 0, 1]}}}
+    match_stage3 = {"$match" : {"$expr": {"$gt": ["$c_balance", average]}}}
+
+    add_stage2 = {"$addFields": {"country": {"$substr" : ["$c_state", 0, 1]}}}
 
     group_stage2 = {"$group": {
         "_id": "$country",
         "numcust": {"$sum": 1},
-        "totacctbal": {"$sum": "$data.data.c_balance"}
+        "totacctbal": {"$sum": "$c_balance"}
     }}
 
     project_stage = {"$project": {
@@ -1826,13 +1831,10 @@ def query_22():
 
     sort_stage = {"$sort": {"country": 1}}
 
-    
-    pipeline = [match_stage1, lookup_orders, add_stage1, match_stage2, group_stage1, unwind_data, match_stage3, add_stage2, group_stage2, project_stage, sort_stage]
+    pipeline = [match_stage3, add_stage2, group_stage2, project_stage, sort_stage]
     start_time = time.time()
     cur = db.customer.aggregate(pipeline, allowDiskUse = True)
     return time.time() - start_time
-
-
 
 if __name__ == "__main__":
     with open('results.txt', 'a') as file:
